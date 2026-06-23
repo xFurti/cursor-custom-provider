@@ -22,6 +22,24 @@ Cursor IDE has two main limitations when you want to use a custom provider (such
 
 ---
 
+## Before & After
+
+### Without cursor-custom-provider
+Trying to use `glm-5.2` directly in Cursor fails because Cursor intercepts the model name and routes it to its native integration:
+
+![Without fix](assets/withoutfix.png)
+
+### With cursor-custom-provider
+Using the configured prefix (`nry-glm-5.2`) routes the request through your own provider and works correctly:
+
+![With fix](assets/withfix.png)
+
+The proxy translates `nry-glm-5.2` back to `glm-5.2` before forwarding it to your provider:
+
+![Proxy log](assets/clifix.png)
+
+---
+
 ## Features
 
 -   🔌 **Zero external Python dependencies** — Uses only the standard library (`http.server`, `urllib`, `subprocess`).
