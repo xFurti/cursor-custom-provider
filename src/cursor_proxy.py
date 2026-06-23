@@ -12,9 +12,10 @@ import ui
 import collections
 
 # Paths relative to this script
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-CONFIG_PATH = os.path.join(SCRIPT_DIR, "config.json")
-LOG_PATH = os.path.join(SCRIPT_DIR, "proxy_log.txt")
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))  # src/
+PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)                # repository root
+CONFIG_PATH = os.path.join(PROJECT_ROOT, "config.json")
+LOG_PATH = os.path.join(PROJECT_ROOT, "proxy_log.txt")
 
 # Load configuration
 config = {}
@@ -126,7 +127,7 @@ def ensure_cloudflared():
 
     # Check project folder
     bin_name = "cloudflared.exe" if os.name == "nt" else "cloudflared"
-    bin_path = os.path.join(SCRIPT_DIR, bin_name)
+    bin_path = os.path.join(PROJECT_ROOT, bin_name)
     if os.path.exists(bin_path):
         return bin_path
 
@@ -170,7 +171,7 @@ def ensure_ngrok():
         pass
 
     bin_name = "ngrok.exe" if os.name == "nt" else "ngrok"
-    bin_path = os.path.join(SCRIPT_DIR, bin_name)
+    bin_path = os.path.join(PROJECT_ROOT, bin_name)
     if os.path.exists(bin_path):
         return bin_path
 
@@ -179,13 +180,13 @@ def ensure_ngrok():
 
     if os.name == "nt":
         url = "https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-windows-amd64.zip"
-        zip_path = os.path.join(SCRIPT_DIR, "ngrok.zip")
+        zip_path = os.path.join(PROJECT_ROOT, "ngrok.zip")
     elif sys.platform == "darwin":
         url = "https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-darwin-amd64.zip"
-        zip_path = os.path.join(SCRIPT_DIR, "ngrok.zip")
+        zip_path = os.path.join(PROJECT_ROOT, "ngrok.zip")
     else:
         url = "https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-amd64.zip"
-        zip_path = os.path.join(SCRIPT_DIR, "ngrok.zip")
+        zip_path = os.path.join(PROJECT_ROOT, "ngrok.zip")
 
     try:
         req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
@@ -207,7 +208,7 @@ def ensure_ngrok():
 
         import zipfile
         with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-            zip_ref.extractall(SCRIPT_DIR)
+            zip_ref.extractall(PROJECT_ROOT)
         try:
             os.remove(zip_path)
         except Exception:

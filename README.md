@@ -95,8 +95,8 @@ The following diagram illustrates the request flow through cursor-custom-provide
 
 4.  **Run the proxy**
 
-    -   **Windows**: double-click `run.bat` or run `python cursor_proxy.py`
-    -   **macOS / Linux**: `./run.sh` or `python cursor_proxy.py`
+    -   **Windows**: double-click `scripts/run.bat` or run `python src/cursor_proxy.py`
+    -   **macOS / Linux**: `./scripts/run.sh` or `python src/cursor_proxy.py`
 
 5.  **Configure Cursor**
 

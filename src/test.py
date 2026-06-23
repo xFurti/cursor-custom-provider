@@ -2,10 +2,10 @@
 """Validation script for cursor-custom-provider.
 
 Run without arguments to validate config.json:
-    python test.py
+    python src/test.py
 
 Run with --live to also start the proxy and test authentication:
-    python test.py --live
+    python src/test.py --live
 """
 
 import json
@@ -22,8 +22,9 @@ try:
 except Exception:
     pass
 
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-CONFIG_PATH = os.path.join(SCRIPT_DIR, "config.json")
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))      # src/
+PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)                   # repository root
+CONFIG_PATH = os.path.join(PROJECT_ROOT, "config.json")
 REQUIRED_KEYS = ["port", "target_base_url", "api_key", "model_prefix", "proxy_secret"]
 
 
@@ -71,8 +72,8 @@ def test_live():
     secret = config["proxy_secret"]
 
     proc = subprocess.Popen(
-        [sys.executable, "cursor_proxy.py"],
-        cwd=SCRIPT_DIR,
+        [sys.executable, "src/cursor_proxy.py"],
+        cwd=PROJECT_ROOT,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
