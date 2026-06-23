@@ -38,6 +38,8 @@ The proxy translates `nry-glm-5.2` back to `glm-5.2` before forwarding it to you
 
 ![Proxy log](assets/clifix.png)
 
+> **Note:** The prefix is only needed for model names that Cursor intercepts or rejects natively (commonly `claude-*`, `gpt-*`, or `glm-*`). If a model already works directly with your provider in Cursor, you don't need to add the prefix.
+
 ---
 
 ## Features
@@ -104,7 +106,7 @@ The following diagram illustrates the request flow through cursor-custom-provide
     | `port` | Local port the proxy listens on. |
     | `target_base_url` | Your provider's OpenAI-compatible base URL. |
     | `api_key` | Your provider's API key. |
-    | `model_prefix` | Prefix added to model names in Cursor. |
+    | `model_prefix` | Prefix added to model names in Cursor. Only required for models that Cursor intercepts natively (e.g. `claude-*`, `gpt-*`, `glm-*`). Models that already route correctly can be used without the prefix. |
     | `tunnel_provider` | `ngrok`, `cloudflare`, or `pinggy`. |
     | `ngrok_authtoken` | Your ngrok authtoken. |
     | `ngrok_domain` | A static domain claimed in your ngrok dashboard. |
