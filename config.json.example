@@ -1,0 +1,6 @@
+{
+  "port": 8080,
+  "target_base_url": "https://router.bynara.id/v1",
+  "api_key": "YOUR_API_KEY_HERE",
+  "model_prefix": "nry-"
+}

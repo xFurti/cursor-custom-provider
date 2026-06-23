@@ -1,0 +1,22 @@
+# Ignora il file di configurazione con le credenziali reali
+config.json
+
+# Ignora i log del proxy e del tunnel
+proxy_log.txt
+*.log
+
+# Ignora file temporanei Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Ignora cartelle di ambiente virtuale
+.venv/
+env/
+venv/
+ENV/
+
+# Ignora file di sistema
+.DS_Store
+Thumbs.db
