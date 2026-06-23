@@ -44,8 +44,35 @@ def log_to_file(message):
     except Exception:
         pass
 
+def ensure_ssh_key():
+    home = os.path.expanduser("~")
+    ssh_dir = os.path.join(home, ".ssh")
+    key_files = ["id_rsa", "id_ed25519", "id_ecdsa", "id_dsa"]
+    key_exists = False
+    
+    if os.path.exists(ssh_dir):
+        try:
+            for f in os.listdir(ssh_dir):
+                if f in key_files:
+                    key_exists = True
+                    break
+        except Exception:
+            pass
+            
+    if not key_exists:
+        print("[Tunnel] Nessuna chiave SSH trovata. Generazione di una chiave SSH locale (necessaria per il tunnel)...")
+        try:
+            os.makedirs(ssh_dir, exist_ok=True)
+            key_path = os.path.join(ssh_dir, "id_ed25519")
+            cmd = ["ssh-keygen", "-t", "ed25519", "-N", "", "-f", key_path]
+            subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
+            print("[Tunnel] Chiave SSH generata con successo!")
+        except Exception as e:
+            print(f"[Tunnel] Errore durante la generazione della chiave SSH: {e}")
+
 def start_tunnel():
     global ssh_process, public_url
+    ensure_ssh_key()
     print(f"[Tunnel] Avvio del tunnel SSH (porta {PORT}) in corso...")
     
     # Comando SSH per Pinggy
