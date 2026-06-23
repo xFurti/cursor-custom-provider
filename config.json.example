@@ -5,5 +5,7 @@
   "model_prefix": "nry-",
   "tunnel_provider": "ngrok",
   "ngrok_authtoken": "YOUR_NGROK_AUTHTOKEN_HERE",
-  "ngrok_domain": "your-static-domain.ngrok-free.app"
+  "ngrok_domain": "your-static-domain.ngrok-free.app",
+  "proxy_secret": "GENERATE_A_RANDOM_SECRET_HERE",
+  "rate_limit_per_min": 30
 }

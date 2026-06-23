@@ -31,6 +31,8 @@ TARGET_BASE_URL = config.get("target_base_url", "https://router.bynara.id/v1")
 MODEL_PREFIX = config.get("model_prefix", "nry-")
 NGROK_AUTHTOKEN = config.get("ngrok_authtoken", "")
 NGROK_DOMAIN = config.get("ngrok_domain", "")
+PROXY_SECRET = config.get("proxy_secret", "")
+RATE_LIMIT_PER_MIN = int(config.get("rate_limit_per_min", 0))
 
 ssh_process = None
 public_url = None
@@ -38,6 +40,49 @@ public_url = None
 if not API_KEY:
     print("\n[⚠️ ATTENZIONE] API Key non configurata in config.json!")
     print("Modifica il file config.json inserendo la tua chiave API prima di iniziare.\n")
+
+if not PROXY_SECRET:
+    print("\n[⚠️ SICUREZZA] proxy_secret non configurato in config.json!")
+    print("Il proxy sarà accessibile da chiunque conosca l'URL pubblico (tunnel).")
+    print("Genera una chiave e inseriscila in config.json per proteggere l'accesso.\n")
+else:
+    RED = "\033[91m"
+    BOLD = "\033[1m"
+    RESET = "\033[0m"
+    try:
+        import ctypes
+        ctypes.windll.kernel32.SetConsoleMode(ctypes.windll.kernel32.GetStdHandle(-11), 7)
+    except Exception:
+        pass
+    print(f"[Sicurezza] Proxy protetto da secret ({len(PROXY_SECRET)} car.).")
+    print(RED + BOLD + "=" * 70 + RESET)
+    print(RED + BOLD + "⚠️  IMPORTANTE: In Cursor, incolla questa secret nel campo 'API Key'" + RESET)
+    print(RED + BOLD + f"   (non usare 'dummy'): {PROXY_SECRET}" + RESET)
+    print(RED + BOLD + "=" * 70 + RESET + "\n")
+
+# --- Rate limiting (token bucket per IP) ---
+import collections
+_rate_buckets = collections.defaultdict(lambda: {"tokens": 0.0, "last": 0.0})
+_rate_lock = threading.Lock()
+
+def rate_limit_check(client_ip):
+    """True se la richiesta è ammessa, False se sfora il limite."""
+    if RATE_LIMIT_PER_MIN <= 0:
+        return True
+    now = time.time()
+    with _rate_lock:
+        bucket = _rate_buckets[client_ip]
+        if bucket["last"] == 0.0:
+            bucket["tokens"] = float(RATE_LIMIT_PER_MIN)
+            bucket["last"] = now
+        # Riempi il bucket proporzionalmente al tempo trascorso
+        elapsed = now - bucket["last"]
+        bucket["tokens"] = min(float(RATE_LIMIT_PER_MIN), bucket["tokens"] + elapsed * (RATE_LIMIT_PER_MIN / 60.0))
+        bucket["last"] = now
+        if bucket["tokens"] < 1.0:
+            return False
+        bucket["tokens"] -= 1.0
+        return True
 
 def log_to_file(message):
     try:
@@ -324,6 +369,38 @@ class BynaraProxyHandler(http.server.BaseHTTPRequestHandler):
         message = "%s - - [%s] %s" % (self.address_string(), self.log_date_time_string(), format%args)
         log_to_file(message)
 
+    def _send_json_error(self, status, public_message, log_detail=None):
+        """Invia un errore JSON generico al client; dettagli solo nel log."""
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.end_headers()
+        self.wfile.write(json.dumps({"error": {"message": public_message}}).encode('utf-8'))
+        if log_detail:
+            log_to_file(log_detail)
+
+    def _check_access(self):
+        """Verifica secret e rate limit. Restituisce True se la richiesta è ammessa."""
+        client_ip = self.client_address[0]
+
+        # 1) Rate limit
+        if not rate_limit_check(client_ip):
+            log_to_file(f"[Auth] Rate limit superato per {client_ip}")
+            self._send_json_error(429, "Too many requests", f"[Auth] 429 Rate limit per {client_ip}")
+            return False
+
+        # 2) Secret (se configurato)
+        if PROXY_SECRET:
+            auth = self.headers.get("Authorization", "")
+            token = ""
+            if auth.lower().startswith("bearer "):
+                token = auth[7:].strip()
+            if token != PROXY_SECRET:
+                log_to_file(f"[Auth] Secret non valido da {client_ip}")
+                self._send_json_error(401, "Unauthorized", f"[Auth] 401 Secret non valido da {client_ip}")
+                return False
+        return True
+
     def do_OPTIONS(self):
         log_to_file(f"[OPTIONS] Richiesta da {self.address_string()} per {self.path}")
         self.send_response(200)
@@ -334,6 +411,8 @@ class BynaraProxyHandler(http.server.BaseHTTPRequestHandler):
 
     def do_GET(self):
         log_to_file(f"[GET] Richiesta da {self.address_string()} per {self.path}")
+        if not self._check_access():
+            return
         if self.path in ("/models", "/v1/models", "/v1/models/"):
             url = f"{TARGET_BASE_URL}/models"
             req = urllib.request.Request(
@@ -359,12 +438,7 @@ class BynaraProxyHandler(http.server.BaseHTTPRequestHandler):
                     self.wfile.write(json.dumps(data).encode('utf-8'))
                     log_to_file("[GET] 200 Success")
             except Exception as e:
-                self.send_response(500)
-                self.send_header("Content-Type", "application/json")
-                self.send_header("Access-Control-Allow-Origin", "*")
-                self.end_headers()
-                self.wfile.write(json.dumps({"error": str(e)}).encode('utf-8'))
-                log_to_file(f"[GET] 500 Errore: {e}")
+                self._send_json_error(500, "Proxy error", f"[GET] 500 Errore: {e}")
         else:
             self.send_response(404)
             self.end_headers()
@@ -373,6 +447,8 @@ class BynaraProxyHandler(http.server.BaseHTTPRequestHandler):
 
     def do_POST(self):
         log_to_file(f"[POST] Richiesta da {self.address_string()} per {self.path}")
+        if not self._check_access():
+            return
         if self.path in ("/chat/completions", "/v1/chat/completions", "/v1/chat/completions/"):
             content_length = int(self.headers.get('Content-Length', 0))
             post_data = self.rfile.read(content_length)
@@ -380,10 +456,7 @@ class BynaraProxyHandler(http.server.BaseHTTPRequestHandler):
             try:
                 body = json.loads(post_data.decode('utf-8'))
             except Exception as e:
-                self.send_response(400)
-                self.end_headers()
-                self.wfile.write(f"Invalid JSON: {e}".encode())
-                log_to_file(f"[POST] 400 JSON invalido: {e}")
+                self._send_json_error(400, "Invalid JSON", f"[POST] 400 JSON invalido: {e}")
                 return
 
             original_model = body.get("model", "")
@@ -437,13 +510,7 @@ class BynaraProxyHandler(http.server.BaseHTTPRequestHandler):
                 self.wfile.write(err_data)
                 log_to_file(f"[POST] HTTPError {e.code}: {err_data.decode('utf-8', errors='ignore')}")
             except Exception as e:
-                self.send_response(500)
-                self.send_header("Content-Type", "application/json")
-                self.send_header("Access-Control-Allow-Origin", "*")
-                self.end_headers()
-                err_resp = {"error": {"message": f"Errore Proxy: {str(e)}"}}
-                self.wfile.write(json.dumps(err_resp).encode())
-                log_to_file(f"[POST] Errore Generico: {e}")
+                self._send_json_error(500, "Proxy error", f"[POST] Errore Generico: {e}")
         else:
             self.send_response(404)
             self.end_headers()
