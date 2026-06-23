@@ -29,6 +29,8 @@ PORT = config.get("port", 8080)
 API_KEY = config.get("api_key", "")
 TARGET_BASE_URL = config.get("target_base_url", "https://router.bynara.id/v1")
 MODEL_PREFIX = config.get("model_prefix", "nry-")
+NGROK_AUTHTOKEN = config.get("ngrok_authtoken", "")
+NGROK_DOMAIN = config.get("ngrok_domain", "")
 
 ssh_process = None
 public_url = None
@@ -116,11 +118,108 @@ def ensure_cloudflared():
         print("[Tunnel] Cloudflare Tunnel non trovato. Su macOS/Linux installalo tramite package manager (es. 'brew install cloudflared').")
         return None
 
+def ensure_ngrok():
+    try:
+        cmd_check = "where" if os.name == "nt" else "which"
+        res = subprocess.run([cmd_check, "ngrok"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        if res.returncode == 0:
+            return "ngrok"
+    except Exception:
+        pass
+
+    bin_name = "ngrok.exe" if os.name == "nt" else "ngrok"
+    bin_path = os.path.join(SCRIPT_DIR, bin_name)
+    if os.path.exists(bin_path):
+        return bin_path
+
+    print("[Tunnel] ngrok non trovato nel PATH né nella cartella del progetto.")
+    print("[Tunnel] Download in corso di ngrok...")
+
+    if os.name == "nt":
+        url = "https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-windows-amd64.zip"
+        zip_path = os.path.join(SCRIPT_DIR, "ngrok.zip")
+    elif sys.platform == "darwin":
+        url = "https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-darwin-amd64.zip"
+        zip_path = os.path.join(SCRIPT_DIR, "ngrok.zip")
+    else:
+        url = "https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-amd64.zip"
+        zip_path = os.path.join(SCRIPT_DIR, "ngrok.zip")
+
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=120) as response, open(zip_path, "wb") as out_file:
+            total_size = int(response.headers.get('content-length', 0))
+            downloaded = 0
+            block_size = 1024 * 1024
+            while True:
+                buffer = response.read(block_size)
+                if not buffer:
+                    break
+                downloaded += len(buffer)
+                out_file.write(buffer)
+                if total_size:
+                    percent = int((downloaded / total_size) * 100)
+                    sys.stdout.write(f"\r[Tunnel] Download: {percent}%")
+                    sys.stdout.flush()
+        print("\n[Tunnel] Download completato. Estrazione...")
+
+        import zipfile
+        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+            zip_ref.extractall(SCRIPT_DIR)
+        try:
+            os.remove(zip_path)
+        except Exception:
+            pass
+        print("[Tunnel] ngrok estratto con successo!")
+        return bin_path
+    except Exception as e:
+        print(f"[Tunnel] Errore nel download di ngrok: {e}")
+        return None
+
 def start_tunnel():
     global ssh_process, public_url
     
-    provider = config.get("tunnel_provider", "cloudflare").lower()
+    provider = config.get("tunnel_provider", "ngrok").lower()
     
+    if provider == "ngrok":
+        if not NGROK_AUTHTOKEN:
+            print("[Tunnel] ⚠️ ngrok_authtoken non configurato in config.json. Ripiego su Cloudflare quick tunnel...")
+            provider = "cloudflare"
+        else:
+            ngrok_path = ensure_ngrok()
+            if not ngrok_path:
+                print("[Tunnel] ngrok non disponibile. Ripiego su Cloudflare quick tunnel...")
+                provider = "cloudflare"
+            else:
+                try:
+                    subprocess.run([ngrok_path, "config", "add-authtoken", NGROK_AUTHTOKEN],
+                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
+                except Exception as e:
+                    print(f"[Tunnel] Errore configurazione authtoken ngrok: {e}")
+                    provider = "cloudflare"
+                else:
+                    cmd = [ngrok_path, "http", str(PORT), "--log=stdout"]
+                    if NGROK_DOMAIN:
+                        cmd.extend(["--domain", NGROK_DOMAIN])
+                        print(f"[Tunnel] Avvio ngrok con dominio statico: {NGROK_DOMAIN} (porta {PORT})...")
+                    else:
+                        print(f"[Tunnel] ⚠️ ngrok_domain non configurato. Verrà usato un URL temporaneo.")
+                        print(f"[Tunnel] Per un dominio stabile, aggiungi 'ngrok_domain' in config.json (es. your-name.ngrok.app)")
+                        print(f"[Tunnel] Avvio ngrok (porta {PORT})...")
+                    try:
+                        ssh_process = subprocess.Popen(
+                            cmd,
+                            stdout=subprocess.PIPE,
+                            stderr=subprocess.STDOUT,
+                            stdin=subprocess.PIPE,
+                            text=True,
+                            bufsize=1
+                        )
+                    except Exception as e:
+                        print(f"[Tunnel] Errore nell'avvio di ngrok: {e}")
+                        print("[Tunnel] Ripiego su Cloudflare quick tunnel...")
+                        provider = "cloudflare"
+
     if provider == "cloudflare":
         cf_path = ensure_cloudflared()
         if not cf_path:
@@ -171,6 +270,8 @@ def start_tunnel():
         global public_url
         if provider == "cloudflare":
             url_regex = re.compile(r"https://[a-zA-Z0-9.-]+\.trycloudflare\.com")
+        elif provider == "ngrok":
+            url_regex = re.compile(r"https://[a-zA-Z0-9.-]+\.ngrok(?:-free)?\.app")
         else:
             url_regex = re.compile(r"https?://[a-zA-Z0-9.-]+\.pinggy(?:-free)?\.link")
             

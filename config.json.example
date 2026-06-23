@@ -3,5 +3,7 @@
   "target_base_url": "https://router.bynara.id/v1",
   "api_key": "YOUR_API_KEY_HERE",
   "model_prefix": "nry-",
-  "tunnel_provider": "cloudflare"
+  "tunnel_provider": "ngrok",
+  "ngrok_authtoken": "YOUR_NGROK_AUTHTOKEN_HERE",
+  "ngrok_domain": "your-static-domain.ngrok-free.app"
 }

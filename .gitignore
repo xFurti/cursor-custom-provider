@@ -8,6 +8,14 @@ proxy_log.txt
 # Ignora il binario di cloudflared
 cloudflared.exe
 
+# Ignora il binario e l'archivio di ngrok
+ngrok.exe
+ngrok
+ngrok.zip
+
+# Ignora la configurazione di ngrok
+ngrok.yml
+
 # Ignora file temporanei Python
 __pycache__/
 *.pyc
