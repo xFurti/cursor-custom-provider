@@ -101,7 +101,7 @@ def start_tunnel():
 
     def read_output():
         global public_url
-        url_regex = re.compile(r"https://[a-zA-Z0-9.-]+\.pinggy\.link")
+        url_regex = re.compile(r"https://[a-zA-Z0-9.-]+\.pinggy(?:-free)?\.link")
         while ssh_process.poll() is None:
             line = ssh_process.stdout.readline()
             if not line:
