@@ -5,6 +5,9 @@ config.json
 proxy_log.txt
 *.log
 
+# Ignora il binario di cloudflared
+cloudflared.exe
+
 # Ignora file temporanei Python
 __pycache__/
 *.pyc
