@@ -60,7 +60,7 @@ def ensure_ssh_key():
             pass
             
     if not key_exists:
-        print("[Tunnel] Nessuna chiave SSH trovata. Generazione di una chiave SSH locale (necessaria per il tunnel)...")
+        print("[Tunnel] Nessuna chiave SSH trovata. Generazione di una chiave SSH locale (necessaria per Pinggy)...")
         try:
             os.makedirs(ssh_dir, exist_ok=True)
             key_path = os.path.join(ssh_dir, "id_ed25519")
@@ -70,50 +70,121 @@ def ensure_ssh_key():
         except Exception as e:
             print(f"[Tunnel] Errore durante la generazione della chiave SSH: {e}")
 
+def ensure_cloudflared():
+    # Verifica se cloudflared è nel PATH del sistema
+    try:
+        cmd_check = "where" if os.name == "nt" else "which"
+        res = subprocess.run([cmd_check, "cloudflared"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        if res.returncode == 0:
+            return "cloudflared"
+    except Exception:
+        pass
+
+    # Verifica se è presente nella cartella del progetto
+    bin_name = "cloudflared.exe" if os.name == "nt" else "cloudflared"
+    bin_path = os.path.join(SCRIPT_DIR, bin_name)
+    if os.path.exists(bin_path):
+        return bin_path
+
+    # Scarica automaticamente su Windows se mancante
+    if os.name == "nt":
+        print("[Tunnel] Cloudflare Tunnel (cloudflared.exe) non trovato nella cartella del progetto.")
+        print("[Tunnel] Download in corso del binario ufficiale di Cloudflare (nessun limite di tempo)...")
+        url = "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe"
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req, timeout=120) as response, open(bin_path, "wb") as out_file:
+                total_size = int(response.headers.get('content-length', 0))
+                downloaded = 0
+                block_size = 1024 * 1024 # 1MB
+                while True:
+                    buffer = response.read(block_size)
+                    if not buffer:
+                        break
+                    downloaded += len(buffer)
+                    out_file.write(buffer)
+                    if total_size:
+                        percent = int((downloaded / total_size) * 100)
+                        sys.stdout.write(f"\r[Tunnel] Download: {percent}% ({downloaded // (1024*1024)}MB / {total_size // (1024*1024)}MB)")
+                        sys.stdout.flush()
+                print("\n[Tunnel] Download completato con successo!")
+            return bin_path
+        except Exception as e:
+            print(f"\n[Tunnel] Errore nel download di cloudflared: {e}")
+            return None
+    else:
+        print("[Tunnel] Cloudflare Tunnel non trovato. Su macOS/Linux installalo tramite package manager (es. 'brew install cloudflared').")
+        return None
+
 def start_tunnel():
     global ssh_process, public_url
-    ensure_ssh_key()
-    print(f"[Tunnel] Avvio del tunnel SSH (porta {PORT}) in corso...")
     
-    # Comando SSH per Pinggy
-    cmd = [
-        "ssh", 
-        "-p", "443", 
-        "-o", "StrictHostKeyChecking=no", 
-        "-o", "ServerAliveInterval=30",
-        f"-R0:localhost:{PORT}", 
-        "free@a.pinggy.io"
-    ]
+    provider = config.get("tunnel_provider", "cloudflare").lower()
     
-    try:
-        ssh_process = subprocess.Popen(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            stdin=subprocess.PIPE,
-            text=True,
-            bufsize=1
-        )
-    except Exception as e:
-        print(f"[Tunnel] Errore nell'avvio del tunnel SSH: {e}")
-        print("[Tunnel] Assicurati che l'OpenSSH Client sia abilitato sul tuo sistema (standard su Win 10/11, macOS e Linux).")
-        return
+    if provider == "cloudflare":
+        cf_path = ensure_cloudflared()
+        if not cf_path:
+            print("[Tunnel] Cloudflare non disponibile. Ripiego su Pinggy (limite 60 min)...")
+            provider = "pinggy"
+        else:
+            print(f"[Tunnel] Avvio del tunnel Cloudflare (porta {PORT}) in corso...")
+            cmd = [cf_path, "tunnel", "--url", f"http://localhost:{PORT}"]
+            try:
+                ssh_process = subprocess.Popen(
+                    cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT, # cloudflared scrive i log su stderr
+                    stdin=subprocess.PIPE,
+                    text=True,
+                    bufsize=1
+                )
+            except Exception as e:
+                print(f"[Tunnel] Errore nell'avvio di cloudflared: {e}")
+                print("[Tunnel] Ripiego su Pinggy...")
+                provider = "pinggy"
+
+    if provider == "pinggy":
+        ensure_ssh_key()
+        print(f"[Tunnel] Avvio del tunnel SSH Pinggy (porta {PORT}) in corso...")
+        cmd = [
+            "ssh", 
+            "-p", "443", 
+            "-o", "StrictHostKeyChecking=no", 
+            "-o", "ServerAliveInterval=30",
+            f"-R0:localhost:{PORT}", 
+            "free@a.pinggy.io"
+        ]
+        try:
+            ssh_process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                stdin=subprocess.PIPE,
+                text=True,
+                bufsize=1
+            )
+        except Exception as e:
+            print(f"[Tunnel] Errore nell'avvio del tunnel SSH Pinggy: {e}")
+            return
 
     def read_output():
         global public_url
-        url_regex = re.compile(r"https?://[a-zA-Z0-9.-]+\.pinggy(?:-free)?\.link")
+        if provider == "cloudflare":
+            url_regex = re.compile(r"https://[a-zA-Z0-9.-]+\.trycloudflare\.com")
+        else:
+            url_regex = re.compile(r"https?://[a-zA-Z0-9.-]+\.pinggy(?:-free)?\.link")
+            
         while ssh_process.poll() is None:
             line = ssh_process.stdout.readline()
             if not line:
                 break
             clean_line = line.strip()
             
-            # Cerca il link HTTP o HTTPS pubblico generato da Pinggy
+            # Cerca il link pubblico generato
             match = url_regex.search(line)
             if match and not public_url:
                 found_url = match.group(0)
-                # Forza sempre HTTPS per Cursor
-                if found_url.startswith("http://"):
+                if provider == "pinggy" and found_url.startswith("http://"):
                     public_url = "https://" + found_url[7:]
                 else:
                     public_url = found_url
@@ -123,11 +194,15 @@ def start_tunnel():
                 print("👉 Configura Cursor inserendo questo URL (Override OpenAI Base URL):")
                 print(f"   {public_url}/v1")
                 print("="*70 + "\n")
-                log_to_file(f"[Tunnel] Tunnel attivo: {public_url}")
+                log_to_file(f"[Tunnel] Tunnel attivo ({provider}): {public_url}")
             
-            # Se non ha ancora trovato l'URL, mostra i log per diagnostica
+            # Mostra i log finché non trova il link (filtra il rumore per Cloudflare)
             if not public_url and clean_line:
-                print(f"[Tunnel LOG] {clean_line}")
+                if provider == "cloudflare":
+                    if "trycloudflare.com" in clean_line or "quick tunnel" in clean_line:
+                        print(f"[Tunnel LOG] {clean_line}")
+                else:
+                    print(f"[Tunnel LOG] {clean_line}")
 
     t = threading.Thread(target=read_output, daemon=True)
     t.start()
@@ -135,13 +210,13 @@ def start_tunnel():
 def cleanup():
     global ssh_process
     if ssh_process:
-        print("[Tunnel] Chiusura tunnel SSH...")
+        print("[Tunnel] Chiusura tunnel...")
         ssh_process.terminate()
         try:
             ssh_process.wait(timeout=3)
         except subprocess.TimeoutExpired:
             ssh_process.kill()
-        print("[Tunnel] Tunnel SSH spento.")
+        print("[Tunnel] Tunnel spento.")
 
 class BynaraProxyHandler(http.server.BaseHTTPRequestHandler):
     def log_message(self, format, *args):
