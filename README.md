@@ -30,7 +30,7 @@ Cursor IDE has two main limitations when you want to use a custom provider (such
 
 ## How it works
 
- The following diagram illustrates the request flow through cursor-custom-provider:
+The following diagram illustrates the request flow through cursor-custom-provider:
 
 ![Architecture Diagram](assets/architecture.png)
 
@@ -71,7 +71,7 @@ Cursor IDE has two main limitations when you want to use a custom provider (such
       "tunnel_provider": "ngrok",
       "ngrok_authtoken": "YOUR_NGROK_AUTHTOKEN",
       "ngrok_domain": "your-name.ngrok-free.app",
-      "proxy_secret": "GENERATE_A_RANDOM_SECRET_HERE",
+      "proxy_secret": "GENERA_UN_SEGRETO_CASUALE_QUI",
       "rate_limit_per_min": 30
     }
     ```
