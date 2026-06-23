@@ -1,4 +1,9 @@
-# cursor-custom-provider: Proxy for Custom AI Providers in Cursor IDE
+# Cursor Custom Provider ![Version](https://img.shields.io/badge/version-1.0-blue)
+**Proxy for Custom AI Providers in Cursor IDE**
+
+![Cursor AI](https://img.shields.io/badge/Cursor_AI-000000?style=for-the-badge&logo=cursor&logoColor=white)
+![Python](https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white)
+
 
 ![cursor-custom-provider Banner](assets/banner.png)
 
@@ -13,7 +18,7 @@ A lightweight, self-contained proxy that allows **Cursor IDE** users to integrat
 Cursor IDE has two main limitations when you want to use a custom provider (such as OpenRouter, Bynara, DeepSeek, etc.):
 
 1.  **"Access to private networks is forbidden"** — Cursor blocks `localhost` / `127.0.0.1` as custom API endpoints. cursor-custom-provider spins up a public HTTPS tunnel so Cursor can reach the proxy.
-2.  **"Model name is not valid"** — Cursor intercepts model names starting with `claude-` or `gpt-` and routes them to its native integrations. This proxy prefixes model names (e.g., `nry-claude-sonnet-4.6`) and translates them back before forwarding them to your provider.
+2.  **"Model name is not valid"** — Cursor intercepts model names starting with `claude-` or `gpt-` and routes them to its native integrations. This proxy prefixes model names (e.g., `custom-claude-sonnet-4.6`) and translates them back before forwarding them to your provider.
 
 ---
 
@@ -50,7 +55,7 @@ The following diagram illustrates the request flow through cursor-custom-provide
 1.  **Clone the repository**
 
     ```bash
-    git clone https://github.com/YOUR_USERNAME/cursor-custom-provider.git
+    git clone https://github.com/xFurti/cursor-custom-provider.git
     cd cursor-custom-provider
     ```
 
@@ -65,14 +70,14 @@ The following diagram illustrates the request flow through cursor-custom-provide
     ```json
     {
       "port": 8080,
-      "target_base_url": "https://router.bynara.id/v1",
+      "target_base_url": "YOUR_PROVIDER_URL_BASE",
       "api_key": "YOUR_PROVIDER_API_KEY",
-      "model_prefix": "nry-",
+      "model_prefix": "custom-",
       "tunnel_provider": "ngrok",
       "ngrok_authtoken": "YOUR_NGROK_AUTHTOKEN",
       "ngrok_domain": "your-name.ngrok-free.app",
-      "proxy_secret": "GENERA_UN_SEGRETO_CASUALE_QUI",
-      "rate_limit_per_min": 30
+      "proxy_secret": "GENERATE_A_SECRET_RANDOM_HERE",
+      "rate_limit_per_min": 30 //it  depends on your provider
     }
     ```
 
@@ -97,9 +102,9 @@ The following diagram illustrates the request flow through cursor-custom-provide
 
     1.  Open **Cursor Settings → Models**.
     2.  Enable **OpenAI API**.
-    3.  In **API Key**, paste your `proxy_secret` (NOT `dummy`).
+    3.  In **API Key**, paste your `proxy_secret`.
     4.  Click **Override OpenAI Base URL** and paste the URL shown in the terminal (e.g., `https://your-name.ngrok-free.app/v1`).
-    5.  Under **Models**, click **+ Add model** and type the model name with your prefix, e.g., `nry-claude-sonnet-4.6`.
+    5.  Under **Models**, click **+ Add model** and type the model name with your prefix, e.g., `custom-claude-sonnet-4.6`.
 
 ---
 

@@ -1,8 +1,8 @@
 {
   "port": 8080,
-  "target_base_url": "https://router.bynara.id/v1",
+  "target_base_url": "YOUR_API_URL_BASE",
   "api_key": "YOUR_API_KEY_HERE",
-  "model_prefix": "nry-",
+  "model_prefix": "custom-",
   "tunnel_provider": "ngrok",
   "ngrok_authtoken": "YOUR_NGROK_AUTHTOKEN_HERE",
   "ngrok_domain": "your-static-domain.ngrok-free.app",
