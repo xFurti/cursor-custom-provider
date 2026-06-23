@@ -25,7 +25,7 @@ def enable_ansi_windows():
         except Exception:
             pass
         try:
-            sys.stdout.reconfigure(encoding="utf-8")
+            sys.stdout.reconfigure(encoding="utf-8", line_buffering=True)
         except Exception:
             pass
     _ansi_enabled = True
@@ -110,7 +110,7 @@ def log_request(method, path, model_in=None, model_out=None, status=0, duration=
     ts = time.strftime("%H:%M:%S")
     arrow = ""
     if model_in and model_out and model_in != model_out:
-        arrow = f"  {model_in} {DIM}→{RESET} {model_out}"
+        arrow = f"  {model_in} {_c('→', DIM)} {model_out}"
     elif model_in:
         arrow = f"  {model_in}"
 
@@ -118,13 +118,13 @@ def log_request(method, path, model_in=None, model_out=None, status=0, duration=
     status_str = _c(f"{status}", status_color)
     dur_str = _c(f"{duration:.2f}s", DIM)
 
-    line = f"{DIM}{ts}{RESET} {_c(method, CYAN)} {path}{arrow}  {status_str} {dur_str}"
+    line = f"{_c(ts, DIM)} {_c(method, CYAN)} {path}{arrow}  {status_str} {dur_str}"
     print(line)
 
 def log_line(message, kind="INFO"):
     enable_ansi_windows()
     ts = time.strftime("%H:%M:%S")
-    print(f"{DIM}{ts}{RESET} {status_tag(kind)} {message}")
+    print(f"{_c(ts, DIM)} {status_tag(kind)} {message}")
 
 
 class Spinner:

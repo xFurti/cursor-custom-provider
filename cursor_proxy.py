@@ -9,22 +9,23 @@ import threading
 import time
 import re
 import ui
+import collections
 
-# Determina i percorsi relativi allo script
+# Paths relative to this script
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.path.join(SCRIPT_DIR, "config.json")
 LOG_PATH = os.path.join(SCRIPT_DIR, "proxy_log.txt")
 
-# Carica la configurazione
+# Load configuration
 config = {}
 if os.path.exists(CONFIG_PATH):
     try:
         with open(CONFIG_PATH, "r", encoding="utf-8") as f:
             config = json.load(f)
     except Exception as e:
-        print(f"[Errore] Impossibile caricare config.json: {e}")
+        print(f"[Error] Unable to load config.json: {e}")
 else:
-    print("[Info] config.json non trovato. Saranno usati i parametri predefiniti di Bynara.")
+    print("[Info] config.json not found. Default Bynara settings will be used.")
 
 PORT = config.get("port", 8080)
 API_KEY = config.get("api_key", "")
@@ -43,27 +44,26 @@ ui.enable_ansi_windows()
 ui.banner()
 
 if not API_KEY:
-    ui.log_line("API Key non configurata in config.json. Modifica il file prima di iniziare.", "ERR")
+    ui.log_line("API Key is not configured in config.json. Set it before starting.", "ERR")
 
 if not PROXY_SECRET:
-    ui.log_line("proxy_secret non configurato. Il proxy sarà accessibile da chiunque conosca l'URL pubblico.", "WARN")
-    ui.log_line("Genera una chiave e inseriscila in config.json per proteggere l'accesso.", "WARN")
+    ui.log_line("proxy_secret is not configured. The proxy will be reachable by anyone who knows the public URL.", "WARN")
+    ui.log_line("Generate a secret and add it to config.json to protect access.", "WARN")
 else:
-    ui.box("SICUREZZA - LEGGERE", [
-        f"Proxy protetto da secret ({len(PROXY_SECRET)} car.).",
+    ui.box("SECURITY - READ THIS", [
+        f"Proxy protected by secret ({len(PROXY_SECRET)} chars).",
         "",
-        "In Cursor, incolla questa secret nel campo 'API Key':",
+        "In Cursor, paste this secret into the 'API Key' field:",
         PROXY_SECRET,
-        "(NON usare 'dummy' o 'sk-dummy' — la richiesta verrebbe rifiutata.)",
+        "(Do NOT use 'dummy' or 'sk-dummy' — the request would be rejected.)",
     ], ui.RED)
 
 # --- Rate limiting (token bucket per IP) ---
-import collections
 _rate_buckets = collections.defaultdict(lambda: {"tokens": 0.0, "last": 0.0})
 _rate_lock = threading.Lock()
 
 def rate_limit_check(client_ip):
-    """True se la richiesta è ammessa, False se sfora il limite."""
+    """Return True if the request is allowed, False if it exceeds the limit."""
     if RATE_LIMIT_PER_MIN <= 0:
         return True
     now = time.time()
@@ -72,7 +72,7 @@ def rate_limit_check(client_ip):
         if bucket["last"] == 0.0:
             bucket["tokens"] = float(RATE_LIMIT_PER_MIN)
             bucket["last"] = now
-        # Riempi il bucket proporzionalmente al tempo trascorso
+        # Refill proportionally to elapsed time
         elapsed = now - bucket["last"]
         bucket["tokens"] = min(float(RATE_LIMIT_PER_MIN), bucket["tokens"] + elapsed * (RATE_LIMIT_PER_MIN / 60.0))
         bucket["last"] = now
@@ -104,18 +104,18 @@ def ensure_ssh_key():
             pass
             
     if not key_exists:
-        print("[Tunnel] Nessuna chiave SSH trovata. Generazione di una chiave SSH locale (necessaria per Pinggy)...")
+        ui.log_line("No SSH key found. Generating a local SSH key (required for Pinggy)...", "INFO")
         try:
             os.makedirs(ssh_dir, exist_ok=True)
             key_path = os.path.join(ssh_dir, "id_ed25519")
             cmd = ["ssh-keygen", "-t", "ed25519", "-N", "", "-f", key_path]
             subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
-            print("[Tunnel] Chiave SSH generata con successo!")
+            ui.log_line("SSH key generated successfully.", "OK")
         except Exception as e:
-            print(f"[Tunnel] Errore durante la generazione della chiave SSH: {e}")
+            ui.log_line(f"Error generating SSH key: {e}", "ERR")
 
 def ensure_cloudflared():
-    # Verifica se cloudflared è nel PATH del sistema
+    # Check if cloudflared is in PATH
     try:
         cmd_check = "where" if os.name == "nt" else "which"
         res = subprocess.run([cmd_check, "cloudflared"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -124,23 +124,23 @@ def ensure_cloudflared():
     except Exception:
         pass
 
-    # Verifica se è presente nella cartella del progetto
+    # Check project folder
     bin_name = "cloudflared.exe" if os.name == "nt" else "cloudflared"
     bin_path = os.path.join(SCRIPT_DIR, bin_name)
     if os.path.exists(bin_path):
         return bin_path
 
-    # Scarica automaticamente su Windows se mancante
+    # Auto-download on Windows
     if os.name == "nt":
-        print("[Tunnel] Cloudflare Tunnel (cloudflared.exe) non trovato nella cartella del progetto.")
-        print("[Tunnel] Download in corso del binario ufficiale di Cloudflare (nessun limite di tempo)...")
+        ui.log_line("cloudflared.exe not found in project folder.", "INFO")
+        ui.log_line("Downloading official Cloudflare binary (no time limit)...", "INFO")
         url = "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe"
         try:
             req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
             with urllib.request.urlopen(req, timeout=120) as response, open(bin_path, "wb") as out_file:
                 total_size = int(response.headers.get('content-length', 0))
                 downloaded = 0
-                block_size = 1024 * 1024 # 1MB
+                block_size = 1024 * 1024  # 1MB
                 while True:
                     buffer = response.read(block_size)
                     if not buffer:
@@ -151,13 +151,13 @@ def ensure_cloudflared():
                         percent = int((downloaded / total_size) * 100)
                         sys.stdout.write(f"\r[Tunnel] Download: {percent}% ({downloaded // (1024*1024)}MB / {total_size // (1024*1024)}MB)")
                         sys.stdout.flush()
-                print("\n[Tunnel] Download completato con successo!")
+                print("\n[Tunnel] Download completed successfully!")
             return bin_path
         except Exception as e:
-            print(f"\n[Tunnel] Errore nel download di cloudflared: {e}")
+            print(f"\n[Tunnel] Error downloading cloudflared: {e}")
             return None
     else:
-        print("[Tunnel] Cloudflare Tunnel non trovato. Su macOS/Linux installalo tramite package manager (es. 'brew install cloudflared').")
+        ui.log_line("Cloudflare Tunnel not found. On macOS/Linux install it via package manager (e.g. 'brew install cloudflared').", "ERR")
         return None
 
 def ensure_ngrok():
@@ -174,8 +174,8 @@ def ensure_ngrok():
     if os.path.exists(bin_path):
         return bin_path
 
-    print("[Tunnel] ngrok non trovato nel PATH né nella cartella del progetto.")
-    print("[Tunnel] Download in corso di ngrok...")
+    ui.log_line("ngrok not found in PATH or project folder.", "INFO")
+    ui.log_line("Downloading ngrok...", "INFO")
 
     if os.name == "nt":
         url = "https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-windows-amd64.zip"
@@ -203,7 +203,7 @@ def ensure_ngrok():
                     percent = int((downloaded / total_size) * 100)
                     sys.stdout.write(f"\r[Tunnel] Download: {percent}%")
                     sys.stdout.flush()
-        print("\n[Tunnel] Download completato. Estrazione...")
+        print("\n[Tunnel] Download completed. Extracting...")
 
         import zipfile
         with zipfile.ZipFile(zip_path, 'r') as zip_ref:
@@ -212,44 +212,58 @@ def ensure_ngrok():
             os.remove(zip_path)
         except Exception:
             pass
-        print("[Tunnel] ngrok estratto con successo!")
+        ui.log_line("ngrok extracted successfully.", "OK")
         return bin_path
     except Exception as e:
-        print(f"[Tunnel] Errore nel download di ngrok: {e}")
+        ui.log_line(f"Error downloading ngrok: {e}", "ERR")
         return None
+
+def _show_ready(url, provider_name):
+    """Print the green 'ready' box and stop the spinner."""
+    global startup_spinner
+    if startup_spinner:
+        startup_spinner.stop()
+    ui.box("CURSOR PROXY READY", [
+        f"Tunnel:  {provider_name}",
+        f"URL:     {url}/v1",
+        "",
+        "In Cursor > Settings > Models > OpenAI API:",
+        "  - Override OpenAI Base URL: paste the URL above",
+        "  - API Key: paste your proxy_secret",
+        "  - Add model: e.g. nry-claude-sonnet-4.6",
+    ], ui.GREEN)
+    log_to_file(f"[Tunnel] Tunnel active ({provider_name}): {url}")
 
 def start_tunnel():
     global ssh_process, public_url, startup_spinner
     
     provider = config.get("tunnel_provider", "ngrok").lower()
-    startup_spinner = ui.Spinner(f"Avvio tunnel ({provider})...")
+    startup_spinner = ui.Spinner(f"Starting {provider} tunnel...")
     startup_spinner.start()
     
     if provider == "ngrok":
         if not NGROK_AUTHTOKEN:
-            print("[Tunnel] ⚠️ ngrok_authtoken non configurato in config.json. Ripiego su Cloudflare quick tunnel...")
+            ui.log_line("ngrok_authtoken not configured in config.json. Falling back to Cloudflare quick tunnel...", "WARN")
             provider = "cloudflare"
         else:
             ngrok_path = ensure_ngrok()
             if not ngrok_path:
-                print("[Tunnel] ngrok non disponibile. Ripiego su Cloudflare quick tunnel...")
+                ui.log_line("ngrok not available. Falling back to Cloudflare quick tunnel...", "WARN")
                 provider = "cloudflare"
             else:
                 try:
                     subprocess.run([ngrok_path, "config", "add-authtoken", NGROK_AUTHTOKEN],
                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
                 except Exception as e:
-                    print(f"[Tunnel] Errore configurazione authtoken ngrok: {e}")
+                    ui.log_line(f"Error configuring ngrok authtoken: {e}", "ERR")
                     provider = "cloudflare"
                 else:
                     cmd = [ngrok_path, "http", str(PORT), "--log=stdout"]
                     if NGROK_DOMAIN:
                         cmd.extend(["--domain", NGROK_DOMAIN])
-                        print(f"[Tunnel] Avvio ngrok con dominio statico: {NGROK_DOMAIN} (porta {PORT})...")
+                        startup_spinner.update(f"Starting ngrok on {NGROK_DOMAIN}...")
                     else:
-                        print(f"[Tunnel] ⚠️ ngrok_domain non configurato. Verrà usato un URL temporaneo.")
-                        print(f"[Tunnel] Per un dominio stabile, aggiungi 'ngrok_domain' in config.json (es. your-name.ngrok.app)")
-                        print(f"[Tunnel] Avvio ngrok (porta {PORT})...")
+                        startup_spinner.update("Starting ngrok (temporary URL)...")
                     try:
                         ssh_process = subprocess.Popen(
                             cmd,
@@ -259,36 +273,40 @@ def start_tunnel():
                             text=True,
                             bufsize=1
                         )
+                        # If a static domain is configured, we already know the public URL.
+                        if NGROK_DOMAIN:
+                            public_url = f"https://{NGROK_DOMAIN}"
+                            _show_ready(public_url, "ngrok")
                     except Exception as e:
-                        print(f"[Tunnel] Errore nell'avvio di ngrok: {e}")
-                        print("[Tunnel] Ripiego su Cloudflare quick tunnel...")
+                        ui.log_line(f"Error starting ngrok: {e}", "ERR")
+                        ui.log_line("Falling back to Cloudflare quick tunnel...", "WARN")
                         provider = "cloudflare"
 
     if provider == "cloudflare":
         cf_path = ensure_cloudflared()
         if not cf_path:
-            print("[Tunnel] Cloudflare non disponibile. Ripiego su Pinggy (limite 60 min)...")
+            ui.log_line("Cloudflare not available. Falling back to Pinggy (60 min limit)...", "WARN")
             provider = "pinggy"
         else:
-            print(f"[Tunnel] Avvio del tunnel Cloudflare (porta {PORT}) in corso...")
+            startup_spinner.update("Starting Cloudflare tunnel...")
             cmd = [cf_path, "tunnel", "--url", f"http://localhost:{PORT}"]
             try:
                 ssh_process = subprocess.Popen(
                     cmd,
                     stdout=subprocess.PIPE,
-                    stderr=subprocess.STDOUT, # cloudflared scrive i log su stderr
+                    stderr=subprocess.STDOUT,  # cloudflared writes logs to stderr
                     stdin=subprocess.PIPE,
                     text=True,
                     bufsize=1
                 )
             except Exception as e:
-                print(f"[Tunnel] Errore nell'avvio di cloudflared: {e}")
-                print("[Tunnel] Ripiego su Pinggy...")
+                ui.log_line(f"Error starting cloudflared: {e}", "ERR")
+                ui.log_line("Falling back to Pinggy...", "WARN")
                 provider = "pinggy"
 
     if provider == "pinggy":
         ensure_ssh_key()
-        print(f"[Tunnel] Avvio del tunnel SSH Pinggy (porta {PORT}) in corso...")
+        startup_spinner.update("Starting Pinggy SSH tunnel (60 min limit)...")
         cmd = [
             "ssh", 
             "-p", "443", 
@@ -307,7 +325,9 @@ def start_tunnel():
                 bufsize=1
             )
         except Exception as e:
-            print(f"[Tunnel] Errore nell'avvio del tunnel SSH Pinggy: {e}")
+            ui.log_line(f"Error starting Pinggy SSH tunnel: {e}", "ERR")
+            if startup_spinner:
+                startup_spinner.stop()
             return
 
     def read_output():
@@ -315,7 +335,7 @@ def start_tunnel():
         if provider == "cloudflare":
             url_regex = re.compile(r"https://[a-zA-Z0-9.-]+\.trycloudflare\.com")
         elif provider == "ngrok":
-            url_regex = re.compile(r"https://[a-zA-Z0-9.-]+\.ngrok(?:-free)?\.app")
+            url_regex = re.compile(r"https://[a-zA-Z0-9.-]+\.ngrok(?:-free)?\.(?:app|dev)")
         else:
             url_regex = re.compile(r"https?://[a-zA-Z0-9.-]+\.pinggy(?:-free)?\.link")
             
@@ -325,7 +345,7 @@ def start_tunnel():
                 break
             clean_line = line.strip()
             
-            # Cerca il link pubblico generato
+            # Look for the generated public URL
             match = url_regex.search(line)
             if match and not public_url:
                 found_url = match.group(0)
@@ -333,22 +353,10 @@ def start_tunnel():
                     public_url = "https://" + found_url[7:]
                 else:
                     public_url = found_url
-                
-                if startup_spinner:
-                    startup_spinner.stop()
-                ui.box("CURSOR PROXY ATTIVO", [
-                    f"Tunnel:  {provider}",
-                    f"URL:     {public_url}/v1",
-                    "",
-                    "In Cursor > Settings > Models > OpenAI API:",
-                    "  - Override OpenAI Base URL: incolla l'URL sopra",
-                    "  - API Key: incolla la tua proxy_secret",
-                    "  - Add model: es. nry-claude-sonnet-4.6",
-                ], ui.GREEN)
-                log_to_file(f"[Tunnel] Tunnel attivo ({provider}): {public_url}")
+                _show_ready(public_url, provider)
             
-            # Mostra i log finché non trova il link (filtra il rumore per Cloudflare)
-            # Non stampare a console mentre lo spinner è attivo (evita race visiva)
+            # Show tunnel logs until the URL is found (filter noise for Cloudflare)
+            # Do not print to console while the spinner is active (avoids visual race)
             if not public_url and clean_line and not (startup_spinner and startup_spinner._active):
                 if provider == "cloudflare":
                     if "trycloudflare.com" in clean_line or "quick tunnel" in clean_line:
@@ -362,13 +370,13 @@ def start_tunnel():
 def cleanup():
     global ssh_process
     if ssh_process:
-        print("[Tunnel] Chiusura tunnel...")
+        ui.log_line("Closing tunnel...", "INFO")
         ssh_process.terminate()
         try:
             ssh_process.wait(timeout=3)
         except subprocess.TimeoutExpired:
             ssh_process.kill()
-        print("[Tunnel] Tunnel spento.")
+        ui.log_line("Tunnel closed.", "OK")
 
 class BynaraProxyHandler(http.server.BaseHTTPRequestHandler):
     def log_message(self, format, *args):
@@ -376,7 +384,7 @@ class BynaraProxyHandler(http.server.BaseHTTPRequestHandler):
         log_to_file(message)
 
     def _send_json_error(self, status, public_message, log_detail=None):
-        """Invia un errore JSON generico al client; dettagli solo nel log."""
+        """Send a generic JSON error to the client; keep details in the log only."""
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
         self.send_header("Access-Control-Allow-Origin", "*")
@@ -386,29 +394,29 @@ class BynaraProxyHandler(http.server.BaseHTTPRequestHandler):
             log_to_file(log_detail)
 
     def _check_access(self):
-        """Verifica secret e rate limit. Restituisce True se la richiesta è ammessa."""
+        """Validate secret and rate limit. Returns True if the request is allowed."""
         client_ip = self.client_address[0]
 
         # 1) Rate limit
         if not rate_limit_check(client_ip):
-            log_to_file(f"[Auth] Rate limit superato per {client_ip}")
-            self._send_json_error(429, "Too many requests", f"[Auth] 429 Rate limit per {client_ip}")
+            log_to_file(f"[Auth] Rate limit exceeded for {client_ip}")
+            self._send_json_error(429, "Too many requests", f"[Auth] 429 Rate limit for {client_ip}")
             return False
 
-        # 2) Secret (se configurato)
+        # 2) Secret (if configured)
         if PROXY_SECRET:
             auth = self.headers.get("Authorization", "")
             token = ""
             if auth.lower().startswith("bearer "):
                 token = auth[7:].strip()
             if token != PROXY_SECRET:
-                log_to_file(f"[Auth] Secret non valido da {client_ip}")
-                self._send_json_error(401, "Unauthorized", f"[Auth] 401 Secret non valido da {client_ip}")
+                log_to_file(f"[Auth] Invalid secret from {client_ip}")
+                self._send_json_error(401, "Unauthorized", f"[Auth] 401 Invalid secret from {client_ip}")
                 return False
         return True
 
     def do_OPTIONS(self):
-        log_to_file(f"[OPTIONS] Richiesta da {self.address_string()} per {self.path}")
+        log_to_file(f"[OPTIONS] Request from {self.address_string()} for {self.path}")
         self.send_response(200)
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Methods", "POST, GET, OPTIONS")
@@ -416,7 +424,7 @@ class BynaraProxyHandler(http.server.BaseHTTPRequestHandler):
         self.end_headers()
 
     def do_GET(self):
-        log_to_file(f"[GET] Richiesta da {self.address_string()} per {self.path}")
+        log_to_file(f"[GET] Request from {self.address_string()} for {self.path}")
         if not self._check_access():
             return
         if self.path in ("/models", "/v1/models", "/v1/models/"):
@@ -431,7 +439,7 @@ class BynaraProxyHandler(http.server.BaseHTTPRequestHandler):
             try:
                 with urllib.request.urlopen(req, timeout=15) as response:
                     data = json.loads(response.read().decode())
-                    # Aggiunge il prefisso configurato a tutti i modelli
+                    # Apply the configured prefix to all models
                     if "data" in data and isinstance(data["data"], list):
                         for item in data["data"]:
                             if "id" in item and MODEL_PREFIX:
@@ -444,15 +452,15 @@ class BynaraProxyHandler(http.server.BaseHTTPRequestHandler):
                     self.wfile.write(json.dumps(data).encode('utf-8'))
                     log_to_file("[GET] 200 Success")
             except Exception as e:
-                self._send_json_error(500, "Proxy error", f"[GET] 500 Errore: {e}")
+                self._send_json_error(500, "Proxy error", f"[GET] 500 Error: {e}")
         else:
             self.send_response(404)
             self.end_headers()
             self.wfile.write(b"Not Found")
-            log_to_file(f"[GET] 404 Not Found per path: {self.path}")
+            log_to_file(f"[GET] 404 Not Found for path: {self.path}")
 
     def do_POST(self):
-        log_to_file(f"[POST] Richiesta da {self.address_string()} per {self.path}")
+        log_to_file(f"[POST] Request from {self.address_string()} for {self.path}")
         if not self._check_access():
             return
         if self.path in ("/chat/completions", "/v1/chat/completions", "/v1/chat/completions/"):
@@ -462,17 +470,17 @@ class BynaraProxyHandler(http.server.BaseHTTPRequestHandler):
             try:
                 body = json.loads(post_data.decode('utf-8'))
             except Exception as e:
-                self._send_json_error(400, "Invalid JSON", f"[POST] 400 JSON invalido: {e}")
+                self._send_json_error(400, "Invalid JSON", f"[POST] 400 Invalid JSON: {e}")
                 return
 
             original_model = body.get("model", "")
-            # Rimuove il prefisso prima di inoltrare la richiesta
+            # Strip the prefix before forwarding the request
             translated_model = original_model
             if MODEL_PREFIX and original_model.startswith(MODEL_PREFIX):
                 translated_model = original_model[len(MODEL_PREFIX):]
             
             body["model"] = translated_model
-            log_to_file(f"[Proxy] Inoltro richiesta: {original_model} -> {translated_model}")
+            log_to_file(f"[Proxy] Forwarding request: {original_model} -> {translated_model}")
 
             req_data = json.dumps(body).encode('utf-8')
             req = urllib.request.Request(
@@ -504,7 +512,7 @@ class BynaraProxyHandler(http.server.BaseHTTPRequestHandler):
                         self.wfile.flush()
                     duration = time.time() - req_start
                     ui.log_request("POST", self.path, original_model, translated_model, response.status, duration)
-                    log_to_file(f"[POST] Successo streaming per {translated_model}")
+                    log_to_file(f"[POST] Streaming success for {translated_model}")
             except urllib.error.HTTPError as e:
                 err_data = e.read()
                 self.send_response(e.code)
@@ -521,29 +529,29 @@ class BynaraProxyHandler(http.server.BaseHTTPRequestHandler):
             except Exception as e:
                 duration = time.time() - req_start
                 ui.log_request("POST", self.path, original_model, translated_model, 500, duration)
-                self._send_json_error(500, "Proxy error", f"[POST] Errore Generico: {e}")
+                self._send_json_error(500, "Proxy error", f"[POST] Generic error: {e}")
         else:
             self.send_response(404)
             self.end_headers()
             self.wfile.write(b"Not Found")
-            log_to_file(f"[POST] 404 Not Found per path: {self.path}")
+            log_to_file(f"[POST] 404 Not Found for path: {self.path}")
 
 def run():
     provider = config.get("tunnel_provider", "ngrok").lower()
-    auth_status = "Abilitata" if PROXY_SECRET else "DISABILITATA"
-    ui.box("Configurazione", [
-        f"Porta:           {PORT}",
+    auth_status = "Enabled" if PROXY_SECRET else "DISABLED"
+    ui.box("Configuration", [
+        f"Port:            {PORT}",
         f"Tunnel:          {provider}",
         f"Provider:        {TARGET_BASE_URL}",
-        f"Prefisso modelli: {MODEL_PREFIX or '(nessuno)'}",
-        f"Autenticazione:  {auth_status}",
-        f"Rate limit:      {RATE_LIMIT_PER_MIN if RATE_LIMIT_PER_MIN > 0 else 'illimitato'} req/min",
+        f"Model prefix:    {MODEL_PREFIX or '(none)'}",
+        f"Authentication:  {auth_status}",
+        f"Rate limit:      {RATE_LIMIT_PER_MIN if RATE_LIMIT_PER_MIN > 0 else 'unlimited'} req/min",
     ], ui.CYAN)
     start_tunnel()
     server_address = ('', PORT)
     httpd = http.server.HTTPServer(server_address, BynaraProxyHandler)
-    ui.log_line(f"Server proxy locale avviato su http://localhost:{PORT}", "OK")
-    ui.log_line("Premi Ctrl+C per fermare il programma.", "INFO")
+    ui.log_line(f"Local proxy server started on http://localhost:{PORT}", "OK")
+    ui.log_line("Press Ctrl+C to stop the program.", "INFO")
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
@@ -551,7 +559,7 @@ def run():
     finally:
         if startup_spinner:
             startup_spinner.stop()
-        ui.log_line("Spegnimento server...", "INFO")
+        ui.log_line("Shutting down server...", "INFO")
         httpd.server_close()
         cleanup()
 

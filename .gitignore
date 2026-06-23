@@ -5,6 +5,10 @@ config.json
 proxy_log.txt
 *.log
 
+# Ignora file di test temporanei
+test_output.txt
+test_err.txt
+
 # Ignora il binario di cloudflared
 cloudflared.exe
 
