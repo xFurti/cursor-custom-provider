@@ -11,6 +11,7 @@ test_output.txt
 test_err.txt
 
 # Ignora il binario di cloudflared
+cloudflared
 cloudflared.exe
 
 # Ignora il binario e l'archivio di ngrok

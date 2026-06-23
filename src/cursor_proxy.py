@@ -8,6 +8,7 @@ import subprocess
 import threading
 import time
 import re
+import platform
 import ui
 import collections
 
@@ -17,6 +18,25 @@ PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)                # repository root
 CONFIG_PATH = os.path.join(PROJECT_ROOT, "config.json")
 LOGS_DIR = os.path.join(PROJECT_ROOT, "logs")
 LOG_PATH = os.path.join(LOGS_DIR, "proxy_log.txt")
+
+
+def get_arch():
+    """Return 'arm64' or 'amd64' based on the current machine architecture."""
+    machine = platform.machine().lower()
+    if machine in ("arm64", "aarch64"):
+        return "arm64"
+    return "amd64"
+
+
+def _set_executable(path):
+    """Make a file executable on Unix-like systems."""
+    if os.name != "nt" and os.path.exists(path):
+        try:
+            import stat
+            st = os.stat(path)
+            os.chmod(path, st.st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+        except Exception:
+            pass
 
 # Load configuration
 config = {}
@@ -133,33 +153,44 @@ def ensure_cloudflared():
     if os.path.exists(bin_path):
         return bin_path
 
-    # Auto-download on Windows
+    # Auto-download for the current platform/arch
+    arch = get_arch()
     if os.name == "nt":
-        ui.log_line("cloudflared.exe not found in project folder.", "INFO")
-        ui.log_line("Downloading official Cloudflare binary (no time limit)...", "INFO")
-        url = "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe"
-        try:
-            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-            with urllib.request.urlopen(req, timeout=120) as response, open(bin_path, "wb") as out_file:
-                total_size = int(response.headers.get('content-length', 0))
-                downloaded = 0
-                block_size = 1024 * 1024  # 1MB
-                while True:
-                    buffer = response.read(block_size)
-                    if not buffer:
-                        break
-                    downloaded += len(buffer)
-                    out_file.write(buffer)
-                    if total_size:
-                        percent = int((downloaded / total_size) * 100)
-                        sys.stdout.write(f"\r[Tunnel] Download: {percent}% ({downloaded // (1024*1024)}MB / {total_size // (1024*1024)}MB)")
-                        sys.stdout.flush()
-                print("\n[Tunnel] Download completed successfully!")
-            return bin_path
-        except Exception as e:
-            print(f"\n[Tunnel] Error downloading cloudflared: {e}")
-            return None
+        platform_name = "windows"
+    elif sys.platform == "darwin":
+        platform_name = "darwin"
     else:
+        platform_name = "linux"
+
+    download_name = f"cloudflared-{platform_name}-{arch}"
+    if os.name == "nt":
+        download_name += ".exe"
+
+    ui.log_line("cloudflared not found in PATH or project folder.", "INFO")
+    ui.log_line("Downloading official Cloudflare binary...", "INFO")
+    url = f"https://github.com/cloudflare/cloudflared/releases/latest/download/{download_name}"
+
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=120) as response, open(bin_path, "wb") as out_file:
+            total_size = int(response.headers.get('content-length', 0))
+            downloaded = 0
+            block_size = 1024 * 1024  # 1MB
+            while True:
+                buffer = response.read(block_size)
+                if not buffer:
+                    break
+                downloaded += len(buffer)
+                out_file.write(buffer)
+                if total_size:
+                    percent = int((downloaded / total_size) * 100)
+                    sys.stdout.write(f"\r[Tunnel] Download: {percent}% ({downloaded // (1024*1024)}MB / {total_size // (1024*1024)}MB)")
+                    sys.stdout.flush()
+        _set_executable(bin_path)
+        print("\n[Tunnel] Download completed successfully!")
+        return bin_path
+    except Exception as e:
+        print(f"\n[Tunnel] Error downloading cloudflared: {e}")
         ui.log_line("Cloudflare Tunnel not found. On macOS/Linux install it via package manager (e.g. 'brew install cloudflared').", "ERR")
         return None
 
@@ -180,15 +211,16 @@ def ensure_ngrok():
     ui.log_line("ngrok not found in PATH or project folder.", "INFO")
     ui.log_line("Downloading ngrok...", "INFO")
 
+    arch = get_arch()
     if os.name == "nt":
-        url = "https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-windows-amd64.zip"
-        zip_path = os.path.join(PROJECT_ROOT, "ngrok.zip")
+        platform_name = "windows"
     elif sys.platform == "darwin":
-        url = "https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-darwin-amd64.zip"
-        zip_path = os.path.join(PROJECT_ROOT, "ngrok.zip")
+        platform_name = "darwin"
     else:
-        url = "https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-amd64.zip"
-        zip_path = os.path.join(PROJECT_ROOT, "ngrok.zip")
+        platform_name = "linux"
+
+    url = f"https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-{platform_name}-{arch}.zip"
+    zip_path = os.path.join(PROJECT_ROOT, "ngrok.zip")
 
     try:
         req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
@@ -215,6 +247,7 @@ def ensure_ngrok():
             os.remove(zip_path)
         except Exception:
             pass
+        _set_executable(bin_path)
         ui.log_line("ngrok extracted successfully.", "OK")
         return bin_path
     except Exception as e:
