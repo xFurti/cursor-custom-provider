@@ -1,6 +1,6 @@
 # Cursor Private Network & Model Name Bypass Proxy
 
-A zero-dependency, single-file Python proxy utility that resolves two of the most common issues when using custom OpenAI-compatible endpoints inside the Cursor IDE:
+A zero-dependency Python proxy utility that resolves two of the most common issues when using custom OpenAI-compatible endpoints inside the Cursor IDE:
 
 1. **"Access to private networks is forbidden"**: Cursor blocks `localhost` / `127.0.0.1` for custom API endpoints to prevent SSRF security risks. This script automatically spins up a secure public HTTPS tunnel (powered by [Pinggy](https://pinggy.io/)) directly in the background using the built-in Windows/macOS/Linux SSH client.
 2. **"Model name is not valid: claude-..."**: Cursor intercepts model names starting with `claude-` or `gpt-` and routes them to native Anthropic/OpenAI integrations, breaking custom routers (like OpenRouter, Naraya, DeepSeek, etc.). This proxy prefixes models with a custom identifier (e.g. `nry-` or `custom-`) so Cursor lets them pass, and translates them back to their original names before forwarding them to the provider.
@@ -30,7 +30,7 @@ sequenceDiagram
 
 ## Features
 
-- 🔌 **Zero Dependencies**: Pure Python code using only standard library modules (`http.server`, `urllib`, `subprocess`, `threading`). No `pip install` required!
+- 🔌 **Zero Dependencies**: Pure Python code using only standard library modules (`http.server`, `urllib`, `subprocess`, `threading`). No `pip install` required! Includes a small built-in `ui.py` helper for a polished ANSI CLI (banner, panels, spinner) — still stdlib only.
 - 🚇 **Auto-Tunneling**: Spawns an SSH tunnel automatically without needing `ngrok` accounts, tokens, or custom executables.
 - 🔄 **On-the-Fly Translation**: Automatically strips prefixes (e.g., `nry-`) from incoming requests.
 - 🔍 **Dynamic Model Discovery**: Maps the `/models` endpoint to list your provider's models with the custom prefix auto-applied.

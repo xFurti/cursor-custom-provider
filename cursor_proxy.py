@@ -8,6 +8,7 @@ import subprocess
 import threading
 import time
 import re
+import ui
 
 # Determina i percorsi relativi allo script
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -36,29 +37,25 @@ RATE_LIMIT_PER_MIN = int(config.get("rate_limit_per_min", 0))
 
 ssh_process = None
 public_url = None
+startup_spinner = None
+
+ui.enable_ansi_windows()
+ui.banner()
 
 if not API_KEY:
-    print("\n[⚠️ ATTENZIONE] API Key non configurata in config.json!")
-    print("Modifica il file config.json inserendo la tua chiave API prima di iniziare.\n")
+    ui.log_line("API Key non configurata in config.json. Modifica il file prima di iniziare.", "ERR")
 
 if not PROXY_SECRET:
-    print("\n[⚠️ SICUREZZA] proxy_secret non configurato in config.json!")
-    print("Il proxy sarà accessibile da chiunque conosca l'URL pubblico (tunnel).")
-    print("Genera una chiave e inseriscila in config.json per proteggere l'accesso.\n")
+    ui.log_line("proxy_secret non configurato. Il proxy sarà accessibile da chiunque conosca l'URL pubblico.", "WARN")
+    ui.log_line("Genera una chiave e inseriscila in config.json per proteggere l'accesso.", "WARN")
 else:
-    RED = "\033[91m"
-    BOLD = "\033[1m"
-    RESET = "\033[0m"
-    try:
-        import ctypes
-        ctypes.windll.kernel32.SetConsoleMode(ctypes.windll.kernel32.GetStdHandle(-11), 7)
-    except Exception:
-        pass
-    print(f"[Sicurezza] Proxy protetto da secret ({len(PROXY_SECRET)} car.).")
-    print(RED + BOLD + "=" * 70 + RESET)
-    print(RED + BOLD + "⚠️  IMPORTANTE: In Cursor, incolla questa secret nel campo 'API Key'" + RESET)
-    print(RED + BOLD + f"   (non usare 'dummy'): {PROXY_SECRET}" + RESET)
-    print(RED + BOLD + "=" * 70 + RESET + "\n")
+    ui.box("SICUREZZA - LEGGERE", [
+        f"Proxy protetto da secret ({len(PROXY_SECRET)} car.).",
+        "",
+        "In Cursor, incolla questa secret nel campo 'API Key':",
+        PROXY_SECRET,
+        "(NON usare 'dummy' o 'sk-dummy' — la richiesta verrebbe rifiutata.)",
+    ], ui.RED)
 
 # --- Rate limiting (token bucket per IP) ---
 import collections
@@ -222,9 +219,11 @@ def ensure_ngrok():
         return None
 
 def start_tunnel():
-    global ssh_process, public_url
+    global ssh_process, public_url, startup_spinner
     
     provider = config.get("tunnel_provider", "ngrok").lower()
+    startup_spinner = ui.Spinner(f"Avvio tunnel ({provider})...")
+    startup_spinner.start()
     
     if provider == "ngrok":
         if not NGROK_AUTHTOKEN:
@@ -335,20 +334,27 @@ def start_tunnel():
                 else:
                     public_url = found_url
                 
-                print("\n" + "="*70)
-                print("💥 CURSOR PROXY ATTIVO ED ESPOSTO! 💥")
-                print("👉 Configura Cursor inserendo questo URL (Override OpenAI Base URL):")
-                print(f"   {public_url}/v1")
-                print("="*70 + "\n")
+                if startup_spinner:
+                    startup_spinner.stop()
+                ui.box("CURSOR PROXY ATTIVO", [
+                    f"Tunnel:  {provider}",
+                    f"URL:     {public_url}/v1",
+                    "",
+                    "In Cursor > Settings > Models > OpenAI API:",
+                    "  - Override OpenAI Base URL: incolla l'URL sopra",
+                    "  - API Key: incolla la tua proxy_secret",
+                    "  - Add model: es. nry-claude-sonnet-4.6",
+                ], ui.GREEN)
                 log_to_file(f"[Tunnel] Tunnel attivo ({provider}): {public_url}")
             
             # Mostra i log finché non trova il link (filtra il rumore per Cloudflare)
-            if not public_url and clean_line:
+            # Non stampare a console mentre lo spinner è attivo (evita race visiva)
+            if not public_url and clean_line and not (startup_spinner and startup_spinner._active):
                 if provider == "cloudflare":
                     if "trycloudflare.com" in clean_line or "quick tunnel" in clean_line:
-                        print(f"[Tunnel LOG] {clean_line}")
+                        ui.log_line(f"[Tunnel] {clean_line}", "INFO")
                 else:
-                    print(f"[Tunnel LOG] {clean_line}")
+                    ui.log_line(f"[Tunnel] {clean_line}", "INFO")
 
     t = threading.Thread(target=read_output, daemon=True)
     t.start()
@@ -466,9 +472,7 @@ class BynaraProxyHandler(http.server.BaseHTTPRequestHandler):
                 translated_model = original_model[len(MODEL_PREFIX):]
             
             body["model"] = translated_model
-            msg = f"[Proxy] Inoltro richiesta: {original_model} -> {translated_model}"
-            print(msg)
-            log_to_file(msg)
+            log_to_file(f"[Proxy] Inoltro richiesta: {original_model} -> {translated_model}")
 
             req_data = json.dumps(body).encode('utf-8')
             req = urllib.request.Request(
@@ -481,6 +485,7 @@ class BynaraProxyHandler(http.server.BaseHTTPRequestHandler):
                 method="POST"
             )
 
+            req_start = time.time()
             try:
                 with urllib.request.urlopen(req, timeout=120) as response:
                     self.send_response(response.status)
@@ -497,6 +502,8 @@ class BynaraProxyHandler(http.server.BaseHTTPRequestHandler):
                             break
                         self.wfile.write(chunk)
                         self.wfile.flush()
+                    duration = time.time() - req_start
+                    ui.log_request("POST", self.path, original_model, translated_model, response.status, duration)
                     log_to_file(f"[POST] Successo streaming per {translated_model}")
             except urllib.error.HTTPError as e:
                 err_data = e.read()
@@ -508,8 +515,12 @@ class BynaraProxyHandler(http.server.BaseHTTPRequestHandler):
                 self.send_header("Access-Control-Allow-Origin", "*")
                 self.end_headers()
                 self.wfile.write(err_data)
+                duration = time.time() - req_start
+                ui.log_request("POST", self.path, original_model, translated_model, e.code, duration)
                 log_to_file(f"[POST] HTTPError {e.code}: {err_data.decode('utf-8', errors='ignore')}")
             except Exception as e:
+                duration = time.time() - req_start
+                ui.log_request("POST", self.path, original_model, translated_model, 500, duration)
                 self._send_json_error(500, "Proxy error", f"[POST] Errore Generico: {e}")
         else:
             self.send_response(404)
@@ -518,17 +529,29 @@ class BynaraProxyHandler(http.server.BaseHTTPRequestHandler):
             log_to_file(f"[POST] 404 Not Found per path: {self.path}")
 
 def run():
+    provider = config.get("tunnel_provider", "ngrok").lower()
+    auth_status = "Abilitata" if PROXY_SECRET else "DISABILITATA"
+    ui.box("Configurazione", [
+        f"Porta:           {PORT}",
+        f"Tunnel:          {provider}",
+        f"Provider:        {TARGET_BASE_URL}",
+        f"Prefisso modelli: {MODEL_PREFIX or '(nessuno)'}",
+        f"Autenticazione:  {auth_status}",
+        f"Rate limit:      {RATE_LIMIT_PER_MIN if RATE_LIMIT_PER_MIN > 0 else 'illimitato'} req/min",
+    ], ui.CYAN)
     start_tunnel()
     server_address = ('', PORT)
     httpd = http.server.HTTPServer(server_address, BynaraProxyHandler)
-    print(f"[Proxy] Server proxy locale avviato su http://localhost:{PORT}")
-    print("Premi Ctrl+C per fermare il programma.\n")
+    ui.log_line(f"Server proxy locale avviato su http://localhost:{PORT}", "OK")
+    ui.log_line("Premi Ctrl+C per fermare il programma.", "INFO")
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
         pass
     finally:
-        print("\n[Proxy] Spegnimento server...")
+        if startup_spinner:
+            startup_spinner.stop()
+        ui.log_line("Spegnimento server...", "INFO")
         httpd.server_close()
         cleanup()
 
