@@ -101,17 +101,23 @@ def start_tunnel():
 
     def read_output():
         global public_url
-        url_regex = re.compile(r"https://[a-zA-Z0-9.-]+\.pinggy(?:-free)?\.link")
+        url_regex = re.compile(r"https?://[a-zA-Z0-9.-]+\.pinggy(?:-free)?\.link")
         while ssh_process.poll() is None:
             line = ssh_process.stdout.readline()
             if not line:
                 break
             clean_line = line.strip()
             
-            # Cerca il link HTTPS pubblico generato da Pinggy
+            # Cerca il link HTTP o HTTPS pubblico generato da Pinggy
             match = url_regex.search(line)
             if match and not public_url:
-                public_url = match.group(0)
+                found_url = match.group(0)
+                # Forza sempre HTTPS per Cursor
+                if found_url.startswith("http://"):
+                    public_url = "https://" + found_url[7:]
+                else:
+                    public_url = found_url
+                
                 print("\n" + "="*70)
                 print("💥 CURSOR PROXY ATTIVO ED ESPOSTO! 💥")
                 print("👉 Configura Cursor inserendo questo URL (Override OpenAI Base URL):")
