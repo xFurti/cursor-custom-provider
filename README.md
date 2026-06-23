@@ -132,7 +132,7 @@ Set `tunnel_provider` to `pinggy`. Uses SSH reverse tunneling. Free sessions las
 -   **Always set `proxy_secret`**. The public tunnel URL can be guessed or leaked; the secret ensures only Cursor can send requests through your proxy.
 -   The proxy validates the `Authorization: Bearer <proxy_secret>` header on every request.
 -   `config.json` is gitignored by default — never commit it.
--   Client-facing errors are generic; full details are written only to `proxy_log.txt`.
+-   Client-facing errors are generic; full details are written only to `logs/proxy_log.txt`.
 
 ---
 

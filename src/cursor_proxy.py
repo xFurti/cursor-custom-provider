@@ -15,7 +15,8 @@ import collections
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))  # src/
 PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)                # repository root
 CONFIG_PATH = os.path.join(PROJECT_ROOT, "config.json")
-LOG_PATH = os.path.join(PROJECT_ROOT, "proxy_log.txt")
+LOGS_DIR = os.path.join(PROJECT_ROOT, "logs")
+LOG_PATH = os.path.join(LOGS_DIR, "proxy_log.txt")
 
 # Load configuration
 config = {}
@@ -84,6 +85,7 @@ def rate_limit_check(client_ip):
 
 def log_to_file(message):
     try:
+        os.makedirs(LOGS_DIR, exist_ok=True)
         with open(LOG_PATH, "a", encoding="utf-8") as f:
             f.write(message + "\n")
     except Exception:

@@ -2,6 +2,7 @@
 config.json
 
 # Ignora i log del proxy e del tunnel
+logs/
 proxy_log.txt
 *.log
 
