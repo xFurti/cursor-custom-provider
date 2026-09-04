@@ -1,6 +1,9 @@
 # Cursor Custom Provider ![Version](https://img.shields.io/badge/version-1.0-blue)
 **Proxy for Custom AI Providers in Cursor IDE**
 
+> [!NOTE]
+> **v2 is in development and will be released soon.** This README describes the current 1.0 release.
+
 ![Cursor AI](https://img.shields.io/badge/Cursor_AI-000000?style=for-the-badge&logo=cursor&logoColor=white)
 ![Python](https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white)
 
